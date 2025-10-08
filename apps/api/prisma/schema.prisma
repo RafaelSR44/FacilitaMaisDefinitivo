@@ -1,0 +1,442 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===== USERS & AUTHENTICATION =====
+
+enum UserRole {
+  CLIENT
+  PROVIDER
+  ADMIN_PORTO
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+model User {
+  id                   String      @id @default(uuid())
+  email                String      @unique
+  cpf                  String      @unique
+  phone                String?
+  passwordHash         String?     @map("password_hash")
+  role                 UserRole
+  status               UserStatus  @default(PENDING)
+  emailVerified        Boolean     @default(false) @map("email_verified")
+  phoneVerified        Boolean     @default(false) @map("phone_verified")
+  portoPolicy          String?     @map("porto_policy_number")
+  lastLoginAt          DateTime?   @map("last_login_at")
+  createdAt            DateTime    @default(now()) @map("created_at")
+  updatedAt            DateTime    @updatedAt @map("updated_at")
+
+  // Relations
+  profile              UserProfile?
+  providerProfile      ProviderProfile?
+  clientBookings       Booking[]   @relation("ClientBookings")
+  providerBookings     Booking[]   @relation("ProviderBookings")
+  sentMessages         Message[]   @relation("MessageSender")
+  wallet               Wallet?
+  payments             Payment[]   @relation("PaymentPayer")
+  receivedPayments     Payment[]   @relation("PaymentPayee")
+  verification         Verification?
+  notifications        Notification[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id           String    @id @default(uuid())
+  userId       String    @unique @map("user_id")
+  fullName     String    @map("full_name")
+  avatarUrl    String?   @map("avatar_url")
+  dateOfBirth  DateTime? @map("date_of_birth")
+  address      Json?
+  documents    Json?
+  preferences  Json?
+  metadata     Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+// ===== PROVIDERS =====
+
+enum VerificationStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum SubscriptionPlan {
+  BASIC
+  PRO
+  GOLD
+}
+
+model ProviderProfile {
+  id                    String              @id @default(uuid())
+  userId                String              @unique @map("user_id")
+  companyName           String?             @map("company_name")
+  cnpj                  String?
+  categories            String[]
+  description           String?
+  serviceRadius         Int                 @default(10) @map("service_radius")
+  rating                Decimal             @default(0.00) @db.Decimal(3,2)
+  totalReviews          Int                 @default(0) @map("total_reviews")
+  totalJobsCompleted    Int                 @default(0) @map("total_jobs_completed")
+  verificationStatus    VerificationStatus  @default(PENDING) @map("verification_status")
+  verificationDocs      Json?               @map("verification_documents")
+  backgroundCheck       Json?               @map("background_check_result")
+  subscriptionPlan      SubscriptionPlan    @default(BASIC) @map("subscription_plan")
+  subscriptionExpires   DateTime?           @map("subscription_expires_at")
+  bankAccount           Json?               @map("bank_account")
+  isAvailable           Boolean             @default(true) @map("is_available")
+  isOnline              Boolean             @default(false) @map("is_online")
+  lastLatitude          Float?              @map("last_latitude")
+  lastLongitude         Float?              @map("last_longitude")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  // Relations
+  user                  User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bids                  ProviderBid[]
+
+  @@map("provider_profiles")
+}
+
+// ===== VERIFICATION =====
+
+model Verification {
+  id                      String    @id @default(uuid())
+  providerId              String    @unique @map("provider_id")
+  cpfValidated            Boolean   @default(false) @map("cpf_validated")
+  criminalCheckPassed     Boolean   @default(false) @map("criminal_check_passed")
+  creditScore             Int?      @map("credit_score")
+  documentsValidated      Boolean   @default(false) @map("documents_validated")
+  facialRecognitionPassed Boolean   @default(false) @map("facial_recognition_passed")
+  aiInterviewScore        Int?      @map("ai_interview_score")
+  trustScore              Int?      @map("trust_score")
+  status                  VerificationStatus @default(PENDING)
+  reviewedBy              String?   @map("reviewed_by")
+  reviewedAt              DateTime? @map("reviewed_at")
+  rejectionReason         String?   @map("rejection_reason")
+  documentsUrls           Json?     @map("documents_urls")
+  verificationMetadata    Json?     @map("verification_metadata")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  provider                User      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@map("verifications")
+}
+
+// ===== BOOKINGS =====
+
+enum BookingStatus {
+  PENDING
+  MATCHED
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  DISPUTED
+}
+
+enum UrgencyLevel {
+  EMERGENCY
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  HELD_IN_ESCROW
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model Booking {
+  id                String         @id @default(uuid())
+  clientId          String         @map("client_id")
+  providerId        String?        @map("provider_id")
+  category          String
+  subcategory       String?
+  title             String
+  description       String?
+  serviceAddress    Json           @map("service_address")
+  serviceLatitude   Float?         @map("service_latitude")
+  serviceLongitude  Float?         @map("service_longitude")
+  scheduledDate     DateTime?      @map("scheduled_date")
+  startedAt         DateTime?      @map("started_at")
+  completedAt       DateTime?      @map("completed_at")
+  status            BookingStatus  @default(PENDING)
+  urgencyLevel      UrgencyLevel   @default(NORMAL) @map("urgency_level")
+  estimatedPrice    Decimal?       @map("estimated_price") @db.Decimal(10,2)
+  finalPrice        Decimal?       @map("final_price") @db.Decimal(10,2)
+  commissionRate    Decimal?       @map("commission_rate") @db.Decimal(5,2)
+  commissionAmount  Decimal?       @map("commission_amount") @db.Decimal(10,2)
+  paymentStatus     PaymentStatus  @default(PENDING) @map("payment_status")
+  slaDeadline       DateTime?      @map("sla_deadline")
+  slaMet            Boolean?       @map("sla_met")
+  photosBefore      String[]       @map("photos_before")
+  photosAfter       String[]       @map("photos_after")
+  checklistCompleted Json?         @map("checklist_completed")
+  clientNotes       String?        @map("client_notes")
+  providerNotes     String?        @map("provider_notes")
+  cancellationReason String?       @map("cancellation_reason")
+  cancelledBy       String?        @map("cancelled_by")
+  metadata          Json?
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  // Relations
+  client            User           @relation("ClientBookings", fields: [clientId], references: [id])
+  provider          User?          @relation("ProviderBookings", fields: [providerId], references: [id])
+  statusHistory     BookingStatusHistory[]
+  bids              ProviderBid[]
+  conversation      Conversation?
+  payments          Payment[]
+
+  @@map("bookings")
+}
+
+model BookingStatusHistory {
+  id        String    @id @default(uuid())
+  bookingId String    @map("booking_id")
+  status    BookingStatus
+  changedBy String?   @map("changed_by")
+  notes     String?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("booking_status_history")
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model ProviderBid {
+  id                String    @id @default(uuid())
+  bookingId         String    @map("booking_id")
+  providerId        String    @map("provider_id")
+  offeredPrice      Decimal   @map("offered_price") @db.Decimal(10,2)
+  estimatedDuration Int?      @map("estimated_duration")
+  message           String?
+  status            BidStatus @default(PENDING)
+  expiresAt         DateTime  @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  booking           Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  provider          ProviderProfile @relation(fields: [providerId], references: [userId])
+
+  @@map("provider_bids")
+}
+
+// ===== PAYMENTS =====
+
+enum PaymentMethod {
+  PIX
+  CREDIT_CARD
+  DEBIT_CARD
+  WALLET
+}
+
+model Wallet {
+  id              String    @id @default(uuid())
+  userId          String    @unique @map("user_id")
+  balance         Decimal   @default(0.00) @db.Decimal(12,2)
+  reservedBalance Decimal   @default(0.00) @map("reserved_balance") @db.Decimal(12,2)
+  totalEarned     Decimal   @default(0.00) @map("total_earned") @db.Decimal(12,2)
+  totalWithdrawn  Decimal   @default(0.00) @map("total_withdrawn") @db.Decimal(12,2)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+
+  @@map("wallets")
+}
+
+model Payment {
+  id                    String        @id @default(uuid())
+  bookingId             String        @map("booking_id")
+  payerId               String        @map("payer_id")
+  payeeId               String        @map("payee_id")
+  amount                Decimal       @map("amount") @db.Decimal(10,2)
+  commissionAmount      Decimal?      @map("commission_amount") @db.Decimal(10,2)
+  netAmount             Decimal?      @map("net_amount") @db.Decimal(10,2)
+  paymentMethod         PaymentMethod @map("payment_method")
+  status                PaymentStatus @default(PENDING)
+  externalTransactionId String?       @map("external_transaction_id")
+  paidAt                DateTime?     @map("paid_at")
+  releasedAt            DateTime?     @map("released_at")
+  refundedAt            DateTime?     @map("refunded_at")
+  metadata              Json?
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  booking               Booking       @relation(fields: [bookingId], references: [id])
+  payer                 User          @relation("PaymentPayer", fields: [payerId], references: [id])
+  payee                 User          @relation("PaymentPayee", fields: [payeeId], references: [id])
+
+  @@map("payments")
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+  REFUND
+  WITHDRAWAL
+  COMMISSION
+}
+
+model Transaction {
+  id           String          @id @default(uuid())
+  walletId     String          @map("wallet_id")
+  type         TransactionType
+  amount       Decimal         @db.Decimal(10,2)
+  balanceAfter Decimal         @map("balance_after") @db.Decimal(12,2)
+  referenceId  String?         @map("reference_id")
+  description  String?
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  wallet       Wallet          @relation(fields: [walletId], references: [id])
+
+  @@map("transactions")
+}
+
+// ===== CHAT =====
+
+model Conversation {
+  id            String    @id @default(uuid())
+  bookingId     String    @unique @map("booking_id")
+  participants  String[]
+  lastMessage   String?   @map("last_message")
+  lastMessageAt DateTime? @map("last_message_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  booking       Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  messages      Message[]
+
+  @@map("conversations")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  VIDEO
+  AUDIO
+  LOCATION
+}
+
+model Message {
+  id               String      @id @default(uuid())
+  conversationId   String      @map("conversation_id")
+  senderId         String      @map("sender_id")
+  messageType      MessageType @default(TEXT) @map("message_type")
+  content          String?
+  mediaUrl         String?     @map("media_url")
+  locationLat      Float?      @map("location_lat")
+  locationLng      Float?      @map("location_lng")
+  isRead           Boolean     @default(false) @map("is_read")
+  readAt           DateTime?   @map("read_at")
+  isModerated      Boolean     @default(false) @map("is_moderated")
+  moderationResult Json?       @map("moderation_result")
+  createdAt        DateTime    @default(now()) @map("created_at")
+
+  // Relations
+  conversation     Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender           User         @relation("MessageSender", fields: [senderId], references: [id])
+
+  @@map("messages")
+}
+
+// ===== NOTIFICATIONS =====
+
+enum NotificationType {
+  PUSH
+  EMAIL
+  SMS
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  DELIVERED
+  FAILED
+}
+
+model Notification {
+  id        String             @id @default(uuid())
+  userId    String             @map("user_id")
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  status    NotificationStatus @default(PENDING)
+  sentAt    DateTime?          @map("sent_at")
+  readAt    DateTime?          @map("read_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  // Relations
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ===== ANALYTICS =====
+
+model AnalyticsDailySummary {
+  id                   String   @id @default(uuid())
+  date                 DateTime @unique
+  totalBookings        Int      @default(0) @map("total_bookings")
+  completedBookings    Int      @default(0) @map("completed_bookings")
+  cancelledBookings    Int      @default(0) @map("cancelled_bookings")
+  totalGmv             Decimal  @default(0.00) @map("total_gmv") @db.Decimal(12,2)
+  totalRevenue         Decimal  @default(0.00) @map("total_revenue") @db.Decimal(12,2)
+  totalCommission      Decimal  @default(0.00) @map("total_commission") @db.Decimal(12,2)
+  avgRating            Decimal? @map("avg_rating") @db.Decimal(3,2)
+  avgCompletionTime    Int?     @map("avg_completion_time")
+  slaMetPercentage     Decimal? @map("sla_met_percentage") @db.Decimal(5,2)
+  newClients           Int      @default(0) @map("new_clients")
+  newProviders         Int      @default(0) @map("new_providers")
+  activeProviders      Int      @default(0) @map("active_providers")
+  categoriesBreakdown  Json?    @map("categories_breakdown")
+  geographicBreakdown  Json?    @map("geographic_breakdown")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@map("analytics_daily_summary")
+}

@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Facilita+ Cliente",
+    "slug": "facilita-porto-client",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFD700"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.facilitaporto.client",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Este app precisa de acesso à localização para encontrar prestadores próximos a você.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Este app precisa de acesso à localização para rastrear o prestador durante o atendimento.",
+        "NSCameraUsageDescription": "Este app precisa de acesso à câmera para você tirar fotos do serviço.",
+        "NSMicrophoneUsageDescription": "Este app precisa de acesso ao microfone para chamadas de voz.",
+        "NSPhotoLibraryUsageDescription": "Este app precisa de acesso às fotos para você enviar imagens do problema."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFD700"
+      },
+      "package": "com.facilitaporto.client",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-location",
+      "expo-camera",
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "O app acessa suas fotos para você enviar imagens do problema."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "facilita-porto-client"
+      }
+    }
+  }
+}

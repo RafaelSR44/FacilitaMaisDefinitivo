@@ -1,0 +1,198 @@
+version: '3.8'
+
+services:
+  # Database
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: facilita-postgres
+    environment:
+      POSTGRES_DB: facilita_porto
+      POSTGRES_USER: facilita_user
+      POSTGRES_PASSWORD: facilita_pass_2024
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=pt_BR.UTF-8 --lc-ctype=pt_BR.UTF-8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - facilita-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U facilita_user -d facilita_porto"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: facilita-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - facilita-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend API
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: facilita-api
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://facilita_user:facilita_pass_2024@postgres:5432/facilita_porto
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: facilita_jwt_secret_2024_porto_seguro
+      JWT_REFRESH_SECRET: facilita_refresh_secret_2024_porto
+      PORTO_OAUTH_CLIENT_ID: porto_client_id_placeholder
+      PORTO_OAUTH_CLIENT_SECRET: porto_client_secret_placeholder
+      PORTO_OAUTH_REDIRECT_URI: http://localhost:3000/auth/porto/callback
+      AWS_REGION: us-east-1
+      AWS_S3_BUCKET: facilita-porto-assets
+      SENDGRID_API_KEY: sendgrid_api_key_placeholder
+      TWILIO_ACCOUNT_SID: twilio_account_sid_placeholder
+      TWILIO_AUTH_TOKEN: twilio_auth_token_placeholder
+      GOOGLE_MAPS_API_KEY: google_maps_api_key_placeholder
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+      - /app/node_modules
+    networks:
+      - facilita-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Web Admin
+  web-admin:
+    build:
+      context: ./apps/web-admin
+      dockerfile: Dockerfile
+    container_name: facilita-web-admin
+    environment:
+      VITE_API_URL: http://localhost:3000
+      VITE_GOOGLE_MAPS_API_KEY: google_maps_api_key_placeholder
+      VITE_PORTO_OAUTH_CLIENT_ID: porto_client_id_placeholder
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+    volumes:
+      - ./apps/web-admin:/app
+      - /app/node_modules
+    networks:
+      - facilita-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: facilita-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./infrastructure/nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - api
+      - web-admin
+    networks:
+      - facilita-network
+
+  # Monitoring - Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: facilita-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - facilita-network
+
+  # Monitoring - Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: facilita-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: facilita_grafana_2024
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infrastructure/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - facilita-network
+
+  # Message Queue - RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: facilita-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: facilita_user
+      RABBITMQ_DEFAULT_PASS: facilita_pass_2024
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - facilita-network
+
+  # ElasticSearch for Logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: facilita-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - facilita-network
+
+  # Kibana for Log Visualization
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: facilita-kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - facilita-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  rabbitmq_data:
+  elasticsearch_data:
+
+networks:
+  facilita-network:
+    driver: bridge
